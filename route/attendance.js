@@ -49,10 +49,6 @@ router.post('/check-in', authenticate, async (req, res) => {
     isWithinRadius(latitude, longitude, office.lat, office.lng)
   );
 
-  if (!matchedOffice) {
-    return res.status(403).json({ message: "❌ Not at an approved location." });
-  }
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -62,20 +58,25 @@ router.post('/check-in', authenticate, async (req, res) => {
   });
 
   if (existing) {
-    return res.json({ message: "✅ Already checked in today." });
+    return res.json({ message: "You have already checked in today. Kindly audit with conscience." });
   }
 
   const record = new Attendance({
     staff: req.staff,
-    officeName: matchedOffice.name,
+    officeName: matchedOffice ? matchedOffice.name : "Unknown Location",
     latitude,
     longitude,
+    locationStatus: matchedOffice ? "In Office" : "Not in Office",
     checkIn: new Date()
   });
 
   await record.save();
-  res.json({ message: `✅ Checked in at ${matchedOffice.name}` });
+
+  res.json({
+    message: "Welcome. Kindly audit with conscience today."
+  });
 });
+
 
 // ✅ Check-out
 router.post('/check-out', authenticate, async (req, res) => {
@@ -87,12 +88,12 @@ router.post('/check-out', authenticate, async (req, res) => {
     checkIn: { $gte: today }
   });
 
-  if (!record) return res.json({ message: "❌ Not checked in today." });
+  if (!record) return res.json({ message: "Not checked in today." });
 
   record.checkOut = new Date();
   await record.save();
 
-  res.json({ message: "✅ Checked out successfully." });
+  res.json({ message: "Checked out successfully." });
 });
 
 // ✅ Dashboard summary
