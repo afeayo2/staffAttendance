@@ -60,7 +60,7 @@ router.post('/add-staff', auth, async (req, res) => {
         For your security, please log in using the button below and update your password at your earliest convenience.
       </p>
       <div style="text-align: center; margin: 30px 0;">
-        <a href="index.html" 
+       <a href="https://rednauditors-attendance-log.onrender.com/index" 
            style="
              background-color: #ed1c16;
              color: #fff;

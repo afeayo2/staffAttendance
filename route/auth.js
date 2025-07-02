@@ -69,7 +69,7 @@ router.post('/forgot-password', async (req, res) => {
 
   const resetToken = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '15m' });
 
-  const resetLink = `http://127.0.0.1:5500/reset-password.html?token=${resetToken}`;
+  const resetLink = `https://rednauditors-attendance-log.onrender.com/reset-password.html?token=${resetToken}`;
 
 const html = `
   <div style="max-width: 600px; margin: auto; font-family: Arial, sans-serif; color: #333; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
