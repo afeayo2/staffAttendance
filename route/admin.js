@@ -40,15 +40,55 @@ router.post('/add-staff', auth, async (req, res) => {
   await staff.save();
 
   // Send Email
-  const html = `
-    <h3>Welcome to Red Auditor Attendance Portal</h3>
-    <p>Dear </srong> ${name} Your account has been created.</p>
-    <p><strong>Email:</strong> ${email}</p>
-    <p><strong>Temporary Password:</strong> ${tempPassword}</p>
-    <p>Please login and change your password.</p>
-  `;
+ const html = `
+  <div style="max-width: 600px; margin: auto; font-family: Arial, sans-serif; color: #333; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
+    <div style="background-color:rgb(2, 106, 40); padding: 20px; text-align: center;">
+      <img src="https://i.postimg.cc/HsZ59Dx0/image.png" alt="Your Logo" style="max-width: 120px; height: auto; margin-bottom: 10px;" />
+      <h2 style="color: #fff; margin: 0; font-weight: normal;">Welcome to NBC Red Auditor Attendance Portal!</h2>
+    </div>
+    <div style="padding: 30px 20px; background: #fff;">
+      <p style="font-size: 16px; line-height: 1.5;">
+        Hello <strong>${name}</strong>,<br /><br />
+        We’re thrilled to have you on board to the Auditors Attendance! Your account has been successfully created and you’re now part of the Red Auditor community.
+      </p>
+      <p style="font-size: 16px; line-height: 1.5;">
+        Here are your login details:
+        <br /><strong>Email:</strong> ${email}<br />
+        <strong>Temporary Password:</strong> ${tempPassword}
+      </p>
+      <p style="font-size: 16px; line-height: 1.5;">
+        For your security, please log in using the button below and update your password at your earliest convenience.
+      </p>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="index.html" 
+           style="
+             background-color: #ed1c16;
+             color: #fff;
+             text-decoration: none;
+             padding: 12px 24px;
+             border-radius: 5px;
+             font-weight: bold;
+             display: inline-block;
+             font-size: 16px;
+             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+           ">
+          Login to Your Account
+        </a>
+      </div>
+      <p style="font-size: 14px; color: #555;">
+        If you have any questions, feel free to contact our team lead anytime.
+      </p>
+      <p style="font-size: 14px; color: #555;">
+        Welcome again, and we look forward to supporting you every step of the way!
+      </p>
+    </div>
+    <div style="background-color: #f4f4f4; padding: 15px; font-size: 12px; color: #999; text-align: center;">
+      &copy; ${new Date().getFullYear()} Your Company. All rights reserved.
+    </div>
+  </div>
+`;
 
-  await sendEmail(email, 'Coca-Cola Attendance - Your Login Details', html);
+  await sendEmail(email, 'NBC Red Auditors Attendance Portal - Your Login Details', html);
 
   res.json({ message: 'Staff created and email sent' });
 });
@@ -195,6 +235,83 @@ router.get('/present-today', auth, async (req, res) => {
 router.get('/staff-list', auth, async (req, res) => {
   const staff = await Staff.find({}, { name: 1, email: 1 });
   res.json(staff);
+});
+
+
+router.post('/create-schedule-all', auth, async (req, res) => {
+  const { startDate, endDate, totalOfficeDaysPerWeek } = req.body;
+
+  if (!startDate || !endDate || !totalOfficeDaysPerWeek) {
+    return res.status(400).json({ message: 'All fields are required' });
+  }
+
+  const staffList = await Staff.find({ status: 'Active' });
+
+  if (staffList.length === 0) {
+    return res.status(404).json({ message: 'No active staff found' });
+  }
+
+  // ✅ Calculate fair distribution
+  const staffCount = staffList.length;
+  const daysPerStaff = Math.ceil(totalOfficeDaysPerWeek / staffCount);
+
+  const schedules = staffList.map(staff => ({
+    staff: staff._id,
+    startDate: new Date(startDate),
+    endDate: new Date(endDate),
+    daysPerWeek: daysPerStaff
+  }));
+
+  // ✅ Remove old schedules within this period to avoid duplicates
+  await Schedule.deleteMany({
+    startDate: { $gte: new Date(startDate) },
+    endDate: { $lte: new Date(endDate) }
+  });
+
+  // ✅ Save new schedules
+  await Schedule.insertMany(schedules);
+
+  res.json({ message: '✅ Schedule created for all staff', schedules });
+});
+
+
+router.get('/check-compliance/:id', auth, async (req, res) => {
+  const { id } = req.params;
+
+  const today = new Date();
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay() + 1); // Monday
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 4); // Friday
+
+  const schedule = await Schedule.findOne({
+    staff: id,
+    startDate: { $lte: today },
+    endDate: { $gte: today }
+  });
+
+  if (!schedule) {
+    return res.status(404).json({ message: 'No active schedule found' });
+  }
+
+  const attendanceCount = await Attendance.countDocuments({
+    staff: id,
+    checkIn: { $gte: startOfWeek, $lte: endOfWeek }
+  });
+
+  const compliant = attendanceCount >= schedule.daysPerWeek;
+
+  res.json({
+    attendanceThisWeek: attendanceCount,
+    requiredDays: schedule.daysPerWeek,
+    compliant,
+    message: compliant ? 'Staff has met the weekly schedule' : 'Staff has NOT met the weekly schedule'
+  });
+});
+
+router.get('/schedules', auth, async (req, res) => {
+  const schedules = await Schedule.find().populate('staff', 'name email');
+  res.json(schedules);
 });
 
 

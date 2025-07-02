@@ -1,2 +1,49 @@
 node_modules/
 .env
+
+
+CLOUD_NAME =dtuvdlurv
+API_KEY =777186668677748
+API_SECRET = lvLOUjsdbUsYUQcLqAvWS28RFek
+BASE_URL=http://localhost:3000
+
+
+cd ATTENDANCESYSTEM
+
+PAYSTACK_SECRET_KEY=sk_test_25d083e044bcef923bc1d97b8ad188f41d15504c
+PAYSTACK_PUBLIC_KEY=pk_test_5325b3ecd618b2fffc5e7141108e07ba85347c42
+EMAIL_USER=info@surelearning.com.ng
+EMAIL_PASS=fayo@2023
+
+SMTP Server: smtp-relay.brevo.com
+
+Port: 587 (TLS) or 465 (SSL)
+
+Login: Your Brevo email
+
+Password: Your SMTP key (API key)
+
+
+
+CLOUD_NAME =dtuvdlurv
+API_KEY =777186668677748
+API_SECRET = lvLOUjsdbUsYUQcLqAvWS28RFek
+BASE_URL=http://localhost:3000
+
+
+cd ATTENDANCESYSTEM
+
+PAYSTACK_SECRET_KEY=sk_test_25d083e044bcef923bc1d97b8ad188f41d15504c
+PAYSTACK_PUBLIC_KEY=pk_test_5325b3ecd618b2fffc5e7141108e07ba85347c42
+EMAIL_USER=info@surelearning.com.ng
+EMAIL_PASS=fayo@2023
+
+SMTP Server: smtp-relay.brevo.com
+
+Port: 587 (TLS) or 465 (SSL)
+
+Login: Your Brevo email
+
+Password: Your SMTP key (API key)
+
+

@@ -1,24 +1,44 @@
 const nodemailer = require('nodemailer');
 
+
 const transporter = nodemailer.createTransport({
-  host: 'smtp.office365.com',
-  port: 587,
-  secure: false,
+  host: 'mail.greatfutureinternationalnurseryandprimaryschool.com',
+  port: 465,
+  secure: true,
   auth: {
-    user: process.env.OUTLOOK_EMAIL,
-    pass: process.env.OUTLOOK_PASSWORD
+    user: process.env.CPANEL_EMAIL,
+    pass: process.env.CPANEL_EMAIL_PASSWORD,
+  },
+  tls: {
+    rejectUnauthorized: false // This disables certificate validation
   }
 });
 
 const sendEmail = async (to, subject, html) => {
   const mailOptions = {
-    from: process.env.OUTLOOK_EMAIL,
+    from: `"NBC Auditors Attendance Portal" <${process.env.CPANEL_EMAIL}>`,
     to,
     subject,
     html
   };
 
-  await transporter.sendMail(mailOptions);
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Email sent:', info.response);
+  } catch (error) {
+    console.error('❌ Error sending email:', error);
+  }
 };
 
 module.exports = sendEmail;
+
+
+
+
+
+
+
+
+
+
+

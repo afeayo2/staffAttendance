@@ -7,6 +7,7 @@ const cors = require("cors");
 const authRoutes = require('./route/auth');
 const attendanceRoutes = require('./route/attendance');
 const admin = require('./route/admin');
+//process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const app = express();
 app.use(cors());
