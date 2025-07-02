@@ -24,7 +24,7 @@ const auth = (req, res, next) => {
 // Office locations
 const allowedOffices = [
   { name: "Office 1 - Head Office", lat: 6.5244, lng: 3.3792 },
-  { name: "Office 2 - Mushin", lat: 6.544980, lng:3.354078 },
+  { name: "Office 2 - Mushin", lat: 6.544436, lng:3.354387},
   {  name: "Office 3 - Ikeja", lat: 6.62191, lng: 3.35309  }
 ];
 
