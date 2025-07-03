@@ -7,6 +7,7 @@ const Attendance = require('../model/Attendance');
 const sendEmail = require('../utils/mailer');
 const auth = require('../route/adminAuth'); // Separate admin middleware
 const Admin = require('../model/Admin');
+const Schedule = require('../model/Schedule');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -40,53 +41,53 @@ router.post('/add-staff', auth, async (req, res) => {
   await staff.save();
 
   // Send Email
- const html = `
-  <div style="max-width: 600px; margin: auto; font-family: Arial, sans-serif; color: #333; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
-    <div style="background-color:rgb(2, 106, 40); padding: 20px; text-align: center;">
-      <img src="https://i.postimg.cc/HsZ59Dx0/image.png" alt="Your Logo" style="max-width: 120px; height: auto; margin-bottom: 10px;" />
-      <h2 style="color: #fff; margin: 0; font-weight: normal;">Welcome to NBC Red Auditor Attendance Portal!</h2>
+const html = `
+  <div style="max-width:600px; margin:auto; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#333; border:1px solid #ddd; border-radius:10px; overflow:hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+    <div style="background-color:#026a28; padding:25px 20px; text-align:center;">
+      <img src="https://i.postimg.cc/HsZ59Dx0/image.png" alt="NBC Logo" width="130" height="auto" style="display:block; margin: 0 auto 15px; object-fit: contain;" />
+      <h2 style="color:#fff; margin:0; font-weight:600; font-size:1.8rem;">Welcome to NBC Red Auditor Attendance Portal!</h2>
     </div>
-    <div style="padding: 30px 20px; background: #fff;">
-      <p style="font-size: 16px; line-height: 1.5;">
-        Hello <strong>${name}</strong>,<br /><br />
-        We’re thrilled to have you on board to the Auditors Attendance! Your account has been successfully created and you’re now part of the Red Auditor community.
+    <div style="background:#fff; padding: 35px 25px 40px; font-size:16px; line-height:1.6; color:#444;">
+      <p>Hello <strong>${name}</strong>,</p>
+      <p>We’re thrilled to have you on board to the Auditors Attendance! Your account has been successfully created and you’re now part of the Red Auditor community.</p>
+      <p><strong>Your login details:</strong><br/>
+         Email: <a href="mailto:${email}" style="color:#ed1c16; text-decoration:none;">${email}</a><br/>
+         Temporary Password: <strong>${tempPassword}</strong>
       </p>
-      <p style="font-size: 16px; line-height: 1.5;">
-        Here are your login details:
-        <br /><strong>Email:</strong> ${email}<br />
-        <strong>Temporary Password:</strong> ${tempPassword}
-      </p>
-      <p style="font-size: 16px; line-height: 1.5;">
-        For your security, please log in using the button below and update your password at your earliest convenience.
-      </p>
-      <div style="text-align: center; margin: 30px 0;">
-       <a href="https://rednauditors-attendance-log.onrender.com/index" 
-           style="
-             background-color: #ed1c16;
-             color: #fff;
-             text-decoration: none;
-             padding: 12px 24px;
-             border-radius: 5px;
-             font-weight: bold;
-             display: inline-block;
-             font-size: 16px;
-             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-           ">
+      <p>For your security, please log in using the button below and update your password at your earliest convenience.</p>
+      <div style="text-align:center; margin: 35px 0;">
+        <a href="https://rednauditors-attendance-log.onrender.com/index" target="_blank" rel="noopener noreferrer"
+          style="
+            background-color:#ed1c16;
+            color:#fff;
+            text-decoration:none;
+            padding:14px 28px;
+            border-radius:6px;
+            font-weight:700;
+            font-size:16px;
+            display:inline-block;
+            box-shadow: 0 5px 10px rgba(237,28,22,0.4);
+            transition: background-color 0.3s ease;
+          "
+          onmouseover="this.style.backgroundColor='#c71512'"
+          onmouseout="this.style.backgroundColor='#ed1c16'"
+        >
           Login to Your Account
         </a>
       </div>
-      <p style="font-size: 14px; color: #555;">
+      <p style="font-size:14px; color:#666; margin-top:0;">
         If you have any questions, feel free to contact our team lead anytime.
       </p>
-      <p style="font-size: 14px; color: #555;">
+      <p style="font-size:14px; color:#666; margin-bottom:0;">
         Welcome again, and we look forward to supporting you every step of the way!
       </p>
     </div>
-    <div style="background-color: #f4f4f4; padding: 15px; font-size: 12px; color: #999; text-align: center;">
-      &copy; ${new Date().getFullYear()} Your Company. All rights reserved.
+    <div style="background:#f4f4f4; padding:15px; font-size:12px; color:#999; text-align:center;">
+      &copy; ${new Date().getFullYear()} NBC Red Auditor Attendance Portal. All rights reserved.
     </div>
   </div>
 `;
+
 
   await sendEmail(email, 'NBC Red Auditors Attendance Portal - Your Login Details', html);
 
@@ -313,6 +314,15 @@ router.get('/schedules', auth, async (req, res) => {
   const schedules = await Schedule.find().populate('staff', 'name email');
   res.json(schedules);
 });
+
+router.get('/staff/:id/schedule', auth, async (req, res) => {
+  const { id } = req.params;
+  const schedule = await Schedule.findOne({ staff: id }).sort({ startDate: -1 });
+  if (!schedule) return res.status(404).json({ message: 'No schedule found' });
+
+  res.json(schedule);
+});
+
 
 
 /*
