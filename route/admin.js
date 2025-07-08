@@ -8,6 +8,7 @@ const sendEmail = require('../utils/mailer');
 const auth = require('../route/adminAuth'); // Separate admin middleware
 const Admin = require('../model/Admin');
 const Schedule = require('../model/Schedule');
+const crypto = require('crypto');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -44,7 +45,6 @@ router.post('/add-staff', auth, async (req, res) => {
 const html = `
   <div style="max-width:600px; margin:auto; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#333; border:1px solid #ddd; border-radius:10px; overflow:hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
     <div style="background-color:#026a28; padding:25px 20px; text-align:center;">
-      <img src="https://i.postimg.cc/HsZ59Dx0/image.png" alt="NBC Logo" width="130" height="auto" style="display:block; margin: 0 auto 15px; object-fit: contain;" />
       <h2 style="color:#fff; margin:0; font-weight:600; font-size:1.8rem;">Welcome to NBC Red Auditor Attendance Portal!</h2>
     </div>
     <div style="background:#fff; padding: 35px 25px 40px; font-size:16px; line-height:1.6; color:#444;">
@@ -239,91 +239,384 @@ router.get('/staff-list', auth, async (req, res) => {
 });
 
 
+
 router.post('/create-schedule-all', auth, async (req, res) => {
   const { startDate, endDate, totalOfficeDaysPerWeek } = req.body;
+  console.log('📅 Incoming:', req.body);
 
   if (!startDate || !endDate || !totalOfficeDaysPerWeek) {
     return res.status(400).json({ message: 'All fields are required' });
   }
 
   const staffList = await Staff.find({ status: 'Active' });
-
-  if (staffList.length === 0) {
+  if (!staffList.length) {
     return res.status(404).json({ message: 'No active staff found' });
   }
 
-  // ✅ Calculate fair distribution
-  const staffCount = staffList.length;
-  const daysPerStaff = Math.ceil(totalOfficeDaysPerWeek / staffCount);
+  const start = new Date(startDate);
+  const end = new Date(endDate);
 
-  const schedules = staffList.map(staff => ({
-    staff: staff._id,
-    startDate: new Date(startDate),
-    endDate: new Date(endDate),
-    daysPerWeek: daysPerStaff
-  }));
-
-  // ✅ Remove old schedules within this period to avoid duplicates
-  await Schedule.deleteMany({
-    startDate: { $gte: new Date(startDate) },
-    endDate: { $lte: new Date(endDate) }
-  });
-
-  // ✅ Save new schedules
-  await Schedule.insertMany(schedules);
-
-  res.json({ message: '✅ Schedule created for all staff', schedules });
-});
-
-
-router.get('/check-compliance/:id', auth, async (req, res) => {
-  const { id } = req.params;
-
-  const today = new Date();
-  const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - today.getDay() + 1); // Monday
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 4); // Friday
-
-  const schedule = await Schedule.findOne({
-    staff: id,
-    startDate: { $lte: today },
-    endDate: { $gte: today }
-  });
-
-  if (!schedule) {
-    return res.status(404).json({ message: 'No active schedule found' });
+  // ✅ Get all working days (Mon-Fri) in the date range
+  const workingDays = [];
+  let currentDate = new Date(start);
+  while (currentDate <= end) {
+    const day = currentDate.getDay();
+    if (day >= 1 && day <= 5) {
+      workingDays.push(new Date(currentDate));
+    }
+    currentDate.setDate(currentDate.getDate() + 1);
   }
 
-  const attendanceCount = await Attendance.countDocuments({
-    staff: id,
-    checkIn: { $gte: startOfWeek, $lte: endOfWeek }
+  const totalWeeks = Math.ceil(workingDays.length / 5);
+
+  // ✅ Prepare assignment map for each staff
+  const staffSchedules = staffList.map(staff => ({
+    staffId: staff._id,
+    assignedDates: [],
+    remainingSlots: totalOfficeDaysPerWeek * totalWeeks
+  }));
+
+  // ✅ Group working days by week
+  const weeks = [];
+  for (let i = 0; i < workingDays.length; i += 5) {
+    weeks.push(workingDays.slice(i, i + 5));
+  }
+
+  // ✅ Assign staff fairly across all weekdays without leaving empty days
+  weeks.forEach(weekDays => {
+    const dailyAssignments = {};
+
+    // For each day in the week
+    weekDays.forEach(day => {
+      dailyAssignments[day] = [];
+
+      // Pick staff who still have available slots
+      const availableStaff = staffSchedules.filter(s => s.remainingSlots > 0);
+
+      // Shuffle for fairness
+      availableStaff.sort(() => Math.random() - 0.5);
+
+      // Calculate how many staff to assign (ensure everyone gets fair spread)
+      const staffPerDay = Math.min(Math.ceil(staffList.length * totalOfficeDaysPerWeek / 5), availableStaff.length);
+
+      const selectedStaff = availableStaff.slice(0, staffPerDay);
+
+      selectedStaff.forEach(s => {
+        s.assignedDates.push(day);
+        s.remainingSlots--;
+        dailyAssignments[day].push(s.staffId);
+      });
+    });
   });
 
-  const compliant = attendanceCount >= schedule.daysPerWeek;
+  // ✅ Prepare schedules to save
+  const schedulesToSave = staffSchedules.map(s => ({
+    staff: s.staffId,
+    startDate: start,
+    endDate: end,
+    daysPerWeek: totalOfficeDaysPerWeek,
+    assignedDates: s.assignedDates
+  }));
+
+  await Schedule.deleteMany({ startDate: { $gte: start }, endDate: { $lte: end } });
+  await Schedule.insertMany(schedulesToSave);
 
   res.json({
-    attendanceThisWeek: attendanceCount,
-    requiredDays: schedule.daysPerWeek,
-    compliant,
-    message: compliant ? 'Staff has met the weekly schedule' : 'Staff has NOT met the weekly schedule'
+    message: '✅ Schedule generated successfully',
+    totalStaff: staffList.length,
+    totalWeeks,
+    schedulesCreated: schedulesToSave.length
   });
 });
 
-router.get('/schedules', auth, async (req, res) => {
-  const schedules = await Schedule.find().populate('staff', 'name email');
-  res.json(schedules);
+
+
+router.post('/create-schedule-all', auth, async (req, res) => {
+  const { startDate, endDate, totalOfficeDaysPerWeek } = req.body;
+  console.log('📅 Incoming:', req.body);
+
+  if (!startDate || !endDate || !totalOfficeDaysPerWeek) {
+    return res.status(400).json({ message: 'All fields are required' });
+  }
+
+  const staffList = await Staff.find({ status: 'Active' });
+  if (!staffList.length) {
+    return res.status(404).json({ message: 'No active staff found' });
+  }
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  // ✅ Step 1: Get all working days (Mon-Fri)
+  const workingDays = [];
+  let currentDate = new Date(start);
+  while (currentDate <= end) {
+    const day = currentDate.getDay();
+    if (day >= 1 && day <= 5) {
+      workingDays.push(new Date(currentDate));
+    }
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  const totalWeeks = Math.ceil(workingDays.length / 5);
+  const maxDaysPerStaff = totalOfficeDaysPerWeek * totalWeeks;
+
+  // ✅ Step 2: Track assigned days for each staff
+  const staffSchedules = staffList.map(staff => ({
+    staffId: staff._id,
+    assignedDates: [],
+    remainingSlots: maxDaysPerStaff
+  }));
+
+  // ✅ Step 3: Assign staff evenly to all working days
+  const dailyAssignments = {};
+
+  workingDays.forEach(day => {
+    // Filter staff who still have available slots
+    const availableStaff = staffSchedules.filter(s => s.remainingSlots > 0);
+
+    if (availableStaff.length === 0) return; // No one left to assign
+
+    // Shuffle for fairness
+    availableStaff.sort(() => Math.random() - 0.5);
+
+    // Calculate how many people should be assigned to this day
+    const avgStaffPerDay = Math.ceil((staffList.length * totalOfficeDaysPerWeek) / 5);
+
+    const staffForToday = availableStaff.slice(0, avgStaffPerDay);
+
+    staffForToday.forEach(s => {
+      s.assignedDates.push(day);
+      s.remainingSlots--;
+    });
+
+    dailyAssignments[day] = staffForToday.map(s => s.staffId);
+  });
+
+  // ✅ Step 4: Prepare for saving
+  const schedulesToSave = staffSchedules.map(s => ({
+    staff: s.staffId,
+    startDate: start,
+    endDate: end,
+    daysPerWeek: totalOfficeDaysPerWeek,
+    assignedDates: s.assignedDates
+  }));
+
+  await Schedule.deleteMany({ startDate: { $gte: start }, endDate: { $lte: end } });
+  await Schedule.insertMany(schedulesToSave);
+
+  res.json({
+    message: '✅ Monthly schedule generated successfully',
+    totalStaff: staffList.length,
+    totalWeeks,
+    schedulesCreated: schedulesToSave.length
+  });
 });
 
-router.get('/staff/:id/schedule', auth, async (req, res) => {
-  const { id } = req.params;
-  const schedule = await Schedule.findOne({ staff: id }).sort({ startDate: -1 });
-  if (!schedule) return res.status(404).json({ message: 'No schedule found' });
 
-  res.json(schedule);
+
+router.get('/staff-in-office/:date', auth, async (req, res) => {
+  const { date } = req.params;
+
+  if (!date) return res.status(400).json({ message: 'Date is required in the format YYYY-MM-DD' });
+
+  const selectedDate = new Date(date);
+  selectedDate.setHours(0, 0, 0, 0);
+
+  const schedules = await Schedule.find({
+    assignedDates: { $elemMatch: { $eq: selectedDate } }
+  }).populate('staff', 'name email');
+
+  if (!schedules.length) {
+    return res.json({ message: 'No staff scheduled for this date', staffInOffice: [] });
+  }
+
+  const staffInOffice = schedules.map(s => ({
+    staffId: s.staff._id,
+    name: s.staff.name,
+    email: s.staff.email
+  }));
+
+  res.json({
+    date: selectedDate.toDateString(),
+    totalInOffice: staffInOffice.length,
+    staffInOffice
+  });
 });
 
 
+router.get('/view-schedules-detailed', auth, async (req, res) => {
+  const schedules = await Schedule.find()
+    .populate('staff', 'name email')
+    .lean();
+
+  const detailedSchedules = schedules.map(schedule => ({
+    staffName: schedule.staff?.name || 'Unknown',
+    email: schedule.staff?.email || '',
+    period: `${schedule.startDate.toDateString()} - ${schedule.endDate.toDateString()}`,
+    assignedDates: (schedule.assignedDates || []).map(date => ({
+      date: new Date(date).toLocaleDateString(),
+      day: new Date(date).toLocaleDateString('en-US', { weekday: 'long' })
+    }))
+  }));
+
+  res.json(detailedSchedules);
+});
+
+
+
+router.get('/grouped-schedules-by-date', auth, async (req, res) => {
+  const schedules = await Schedule.find()
+    .populate('staff', 'name email')
+    .lean();
+
+  const dateGroups = {};
+
+  schedules.forEach(schedule => {
+    (schedule.assignedDates || []).forEach(date => {
+      const dateKey = new Date(date).toLocaleDateString();
+
+      if (!dateGroups[dateKey]) {
+        dateGroups[dateKey] = [];
+      }
+
+      dateGroups[dateKey].push({
+        name: schedule.staff?.name || 'Unknown',
+        email: schedule.staff?.email || '',
+      });
+    });
+  });
+
+  res.json(dateGroups);
+});
+
+
+
+
+router.post('/add-admin', auth, async (req, res) => {
+  const { name, email } = req.body;
+
+  if (!name || !email) {
+    return res.status(400).json({ message: 'Name and Email are required' });
+  }
+
+  // Check if admin already exists
+  const existingAdmin = await Admin.findOne({ email });
+  if (existingAdmin) {
+    return res.status(400).json({ message: 'Admin with this email already exists' });
+  }
+
+  // Generate a temporary random password
+  const tempPassword = Math.random().toString(36).slice(-8);
+  const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+  // Create new admin
+  const newAdmin = new Admin({
+    name,
+    email,
+    password: hashedPassword
+  });
+
+  await newAdmin.save();
+
+  // Prepare the welcome email
+  const html = `
+    <div style="max-width:600px; margin:auto; font-family: Arial, sans-serif; border:1px solid #ddd; border-radius:8px; overflow:hidden;">
+      <div style="background-color:#026a28; padding:20px; text-align:center;">
+        <h2 style="color:#fff;">Welcome to NBC Admin Portal</h2>
+      </div>
+      <div style="padding: 30px;">
+        <p>Hello <strong>${name}</strong>,</p>
+        <p>Your admin account has been created. Here are your login details:</p>
+        <p>Email: <strong>${email}</strong><br>
+           Temporary Password: <strong>${tempPassword}</strong></p>
+        <p>Please log in using the link below and change your password immediately:</p>
+        <div style="text-align:center; margin:20px 0;">
+          <a href="https://rednauditors-attendance-log.onrender.com/index" target="_blank" style="background-color:#ed1c16; color:#fff; padding:12px 24px; border-radius:5px; text-decoration:none;">
+            Login to Admin Portal
+          </a>
+        </div>
+        <p style="font-size:12px; color:#666;">If you did not request this, please contact support immediately.</p>
+      </div>
+      <div style="background:#f4f4f4; text-align:center; padding:10px; font-size:12px; color:#999;">
+        &copy; ${new Date().getFullYear()} NBC Red Auditor Attendance. All rights reserved.
+      </div>
+    </div>
+  `;
+
+  // Send email
+  await sendEmail(email, 'NBC Admin Access - Your Login Details', html);
+
+  res.json({ message: '✅ Admin created and login details sent via email.' });
+});
+
+
+
+
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+
+  const admin = await Admin.findOne({ email });
+  if (!admin) {
+    return res.status(404).json({ message: 'Admin with this email not found.' });
+  }
+
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const expiry = Date.now() + 1000 * 60 * 15;  // Token valid for 15 minutes
+
+  admin.resetToken = resetToken;
+  admin.resetTokenExpiry = expiry;
+  await admin.save();
+
+  const resetLink = `https://rednauditors-attendance-log.onrender.com/reset-password.html?token=${resetToken}&email=${email}`;
+
+  const html = `
+    <h2>Password Reset Request</h2>
+    <p>Hello ${admin.name},</p>
+    <p>We received a request to reset your password. Please click the link below to set a new password:</p>
+    <a href="${resetLink}" style="padding:10px 15px; background:#ed1c16; color:#fff; text-decoration:none; border-radius:5px;">Reset Password</a>
+    <p>This link will expire in 15 minutes.</p>
+    <p>If you didn't request this, please ignore this email.</p>
+  `;
+
+  await sendEmail(email, 'NBC Red Auditor Password Reset', html);
+
+  res.json({ message: '✅ Reset link sent to email.' });
+});
+
+router.post('/reset-password', async (req, res) => {
+  const { email, token, newPassword } = req.body;
+
+  const admin = await Admin.findOne({ email, resetToken: token, resetTokenExpiry: { $gt: Date.now() } });
+  if (!admin) {
+    return res.status(400).json({ message: 'Invalid or expired reset link.' });
+  }
+
+  const hashed = await bcrypt.hash(newPassword, 10);
+  admin.password = hashed;
+  admin.resetToken = null;
+  admin.resetTokenExpiry = null;
+  await admin.save();
+
+  res.json({ message: '✅ Password has been reset successfully.' });
+});
+
+
+router.get('/permissions', auth, async (req, res) => {
+  const today = new Date();
+
+  const permissions = await Staff.find({
+    permission: {
+      $ne: null,
+      $exists: true
+    },
+    'permission.startDate': { $lte: today },
+    'permission.endDate': { $gte: today }
+  }, { name: 1, email: 1, permission: 1, status: 1 })
+  .sort({ 'permission.startDate': -1 });
+
+  res.json(permissions);
+});
 
 /*
 

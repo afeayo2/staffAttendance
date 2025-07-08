@@ -74,7 +74,6 @@ router.post('/forgot-password', async (req, res) => {
 const html = `
   <div style="max-width:600px; margin:auto; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#333; border:1px solid #ddd; border-radius:10px; overflow:hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
     <div style="background-color:#036703; padding:25px 20px; text-align:center;">
-      <img src="https://i.postimg.cc/HsZ59Dx0/image.png" alt="Logo" width="130" height="auto" style="display:block; margin:0 auto 15px; object-fit: contain;" />
       <h2 style="color:#fff; margin:0; font-weight:600; font-size:1.8rem;">Reset Your Password</h2>
     </div>
     <div style="background:#fff; padding:35px 25px 40px; font-size:16px; line-height:1.6; color:#444;">

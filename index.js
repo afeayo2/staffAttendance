@@ -7,6 +7,9 @@ const cors = require("cors");
 const authRoutes = require('./route/auth');
 const attendanceRoutes = require('./route/attendance');
 const admin = require('./route/admin');
+const cron = require('node-cron');
+const Staff = require('./model/Staff');
+
 //process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const app = express();
@@ -24,6 +27,26 @@ mongoose.connect(MONGO_URI)
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', admin);
 app.use('/api/attendance', attendanceRoutes);
+
+
+// Runs every day at midnight
+cron.schedule('0 0 * * *', async () => {
+  const today = new Date();
+
+  const staffWithPermissions = await Staff.find({ 'permission.endDate': { $lte: today } });
+
+  for (const staff of staffWithPermissions) {
+    if (staff.permission) {
+      staff.permissionsHistory.push(staff.permission);  // Move to history
+      staff.permission = null;
+      staff.status = 'Active';
+      await staff.save();
+    }
+  }
+
+  console.log(`✅ Expired permissions cleared: ${staffWithPermissions.length} staff updated`);
+});
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

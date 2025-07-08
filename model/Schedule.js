@@ -4,7 +4,8 @@ const scheduleSchema = new mongoose.Schema({
   staff: { type: mongoose.Schema.Types.ObjectId, ref: 'Staff' },
   startDate: Date,
   endDate: Date,
-  daysPerWeek: Number,  // e.g., 3 days per week
+  daysPerWeek: Number,        // ✅ Needed
+  assignedDates: [Date],      // ✅ MUST be here
   createdAt: { type: Date, default: Date.now }
 });
 

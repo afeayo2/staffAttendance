@@ -15,12 +15,15 @@ const staffSchema = new mongoose.Schema({
   name: String,
   email: { type: String, unique: true },
   password: String,
-  permission: permissionSchema, // Active permission
+  permission: permissionSchema, 
+  permissionsHistory: [permissionSchema],  // Past permissions
   status: {
     type: String,
     enum: ['Active', 'On Leave', 'On Official Duty', 'Sick', 'Suspended'],
     default: 'Active'
-  }
+  },
+  warningSentMonth: { type: String, default: null },  // e.g. '2025-07'
+  querySentMonth: { type: String, default: null }     // e.g. '2025-07'
 });
 
 module.exports = mongoose.model('Staff', staffSchema);
