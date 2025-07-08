@@ -37,7 +37,7 @@ const auth = (req, res, next) => {
 
 // Office locations
 const allowedOffices = [
-  { name: "Office 1 - Head Office", lat: 6.5244, lng: 3.3792 },
+  { name: "Office 1 - Head Office", lat: 6.477375, lng: 3.345379 },
   { name: "Office 2 - Mushin", lat: 6.544436, lng:3.354387},
   {  name: "Office 3 - Ikeja", lat: 6.62191, lng: 3.35309  }
 ];
@@ -55,13 +55,13 @@ const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm = 0.05) => {
   return R * c <= radiusKm;
 };
 
-// ✅ Check-in
 
+// ✅ Check-in
 router.post('/check-in', authenticate, async (req, res) => {
   const { latitude, longitude, deviceId } = req.body;
 
   if (!deviceId) {
-    return res.status(400).json({ message: "Device ID is required for security." });
+    return res.status(400).json({ message: "🚫 Device ID is required for security." });
   }
 
   const matchedOffice = allowedOffices.find(office =>
@@ -70,6 +70,22 @@ router.post('/check-in', authenticate, async (req, res) => {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  const now = new Date();
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+
+  const staff = await Staff.findById(req.staff);
+  if (!staff) {
+    return res.status(404).json({ message: "❌ Staff not found." });
+  }
+
+  // ✅ Check for active permission (leave, official duty, etc.)
+  const hasPermission = staff.permission &&
+                        staff.permission.startDate &&
+                        staff.permission.endDate &&
+                        new Date(staff.permission.startDate) <= now &&
+                        now <= new Date(staff.permission.endDate);
 
   // ✅ Prevent multiple check-ins by same staff same day
   const existingCheckIn = await Attendance.findOne({
@@ -81,22 +97,25 @@ router.post('/check-in', authenticate, async (req, res) => {
     return res.json({ message: "🚫 You have already checked in today." });
   }
 
-  // ✅ Prevent multiple check-ins by device ID same day
+  // ✅ Prevent same device being used by another staff same day
   const existingDeviceCheckIn = await Attendance.findOne({
     deviceId,
     checkIn: { $gte: today }
   });
 
-  if (existingDeviceCheckIn) {
-    return res.status(400).json({ message: "🚫 This device has already been used to check in today." });
+  if (existingDeviceCheckIn && existingDeviceCheckIn.staff.toString() !== req.staff.toString()) {
+    return res.status(400).json({ message: "🚫 This device has already been used to check in for another staff today." });
   }
 
-  const now = new Date();
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
+  // ✅ Determine attendance status
+  let status = 'Present';
+  if (hasPermission) {
+    status = 'Permission';
+  } else if (hours > 9 || (hours === 9 && minutes > 0)) {
+    status = 'Absent';
+  }
 
-  const isLate = hours > 9 || (hours === 9 && minutes > 0);
-
+  // ✅ Save attendance record
   const record = new Attendance({
     staff: req.staff,
     officeName: matchedOffice ? matchedOffice.name : "Unknown Location",
@@ -104,17 +123,35 @@ router.post('/check-in', authenticate, async (req, res) => {
     longitude,
     locationStatus: matchedOffice ? "In Office" : "Not in Office",
     checkIn: now,
-    status: isLate ? "Absent" : "Present",
-    deviceId // 📱 Store device ID
+    status,
+    deviceId
   });
 
   await record.save();
 
+  // ✅ Update staff's monthly absence count (only if Absent and not on Permission)
+  if (status === 'Absent') {
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const absenceCount = await Attendance.countDocuments({
+      staff: req.staff,
+      checkIn: { $gte: monthStart },
+      status: 'Absent'
+    });
+    staff.monthlyAbsence = absenceCount;
+    await staff.save();
+  }
+
   res.json({
-    message: isLate ? "⏰ You checked in after 9:00 AM. Marked as Absent." : "✅ Checked in successfully.",
-    status: record.status
+    message:
+      status === 'Absent'
+        ? "⏰ You checked in after 9:00 AM. Marked as Absent."
+        : status === 'Permission'
+        ? "📝 You are currently on Permission. Marked accordingly."
+        : "✅ Checked in successfully.",
+    status
   });
 });
+
 
 
 
@@ -136,6 +173,7 @@ const getQueryEmailHtml = (name) => `
   <p>This is an official query and will be added to your record. Please see HR for clarification.</p>
   <p>Regards,<br/>NBC Red Auditor System</p>
 `;
+
 
 // GET: Monthly Attendance Check and Auto Email
 router.get('/check-absences', authenticate, async (req, res) => {
@@ -175,7 +213,7 @@ router.get('/check-absences', authenticate, async (req, res) => {
     if (absenceCount >= 6 && staff.querySentMonth !== currentMonth) {
       const queryHtml = getQueryEmailHtml(staff.name);
       await sendEmail(
-        [staff.email, 'hr@nbc.com', 'ayoafe@gmail.com', 'admin@nbc.com'],
+        [staff.email, 'afeayos@gmail.com', 'abdulnafiu.abdulyakin@cchellenic.com', 'afeayosunday@gmail.com'],
         '🚨 Official Query: Excessive Absences',
         queryHtml
       );

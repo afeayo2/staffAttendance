@@ -23,7 +23,8 @@ const staffSchema = new mongoose.Schema({
     default: 'Active'
   },
   warningSentMonth: { type: String, default: null },  // e.g. '2025-07'
-  querySentMonth: { type: String, default: null }     // e.g. '2025-07'
+  querySentMonth: { type: String, default: null },    // e.g. '2025-07'
+  monthlyAbsence: { type: Number, default: 0 }        // ✅ NEW: Tracks monthly absences
 });
 
 module.exports = mongoose.model('Staff', staffSchema);
