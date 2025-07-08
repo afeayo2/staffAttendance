@@ -43,8 +43,8 @@ router.post('/add-staff', auth, async (req, res) => {
 
   // Send Email
 const html = `
-  <div style="max-width:600px; margin:auto; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#333; border:1px solid #ddd; border-radius:10px; overflow:hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-    <div style="background-color:#026a28; padding:25px 20px; text-align:center;">
+  <div style="max-width:600px; margin:auto; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#333; border:1px solid #ddd; border-radius:10px; overflow:hidden; box-shadow: 0 4px 12px rgba(245, 245, 245, 0.1);">
+    <div style="background-color:rgba(237,28,22,0.4); padding:25px 20px; text-align:center;">
       <h2 style="color:#fff; margin:0; font-weight:600; font-size:1.8rem;">Welcome to NBC Red Auditor Attendance Portal!</h2>
     </div>
     <div style="background:#fff; padding: 35px 25px 40px; font-size:16px; line-height:1.6; color:#444;">
@@ -522,8 +522,8 @@ router.post('/add-admin', auth, async (req, res) => {
   // Prepare the welcome email
   const html = `
     <div style="max-width:600px; margin:auto; font-family: Arial, sans-serif; border:1px solid #ddd; border-radius:8px; overflow:hidden;">
-      <div style="background-color:#026a28; padding:20px; text-align:center;">
-        <h2 style="color:#fff;">Welcome to NBC Admin Portal</h2>
+      <div style="background-color:rgba(237,28,22,0.4); padding:20px; text-align:center;">
+        <h2 style="color:#fff;">Welcome to NBC Red Auditor Attendance Admin Portal</h2>
       </div>
       <div style="padding: 30px;">
         <p>Hello <strong>${name}</strong>,</p>
@@ -545,7 +545,7 @@ router.post('/add-admin', auth, async (req, res) => {
   `;
 
   // Send email
-  await sendEmail(email, 'NBC Admin Access - Your Login Details', html);
+  await sendEmail(email, 'NBC Red Auditor Attendance Admin Access - Your Login Details', html);
 
   res.json({ message: '✅ Admin created and login details sent via email.' });
 });

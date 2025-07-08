@@ -48,6 +48,13 @@ cron.schedule('0 0 * * *', async () => {
 });
 
 
+// Get individual staff schedule
+app.get('/',(req, res) => {
+  res.send("welcome to Nbc Red Auditor Attendance portal")
+})
+
+
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 
