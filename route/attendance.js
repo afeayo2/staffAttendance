@@ -57,101 +57,118 @@ const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm = 0.05) => {
 
 
 // ✅ Check-in
+// ✅ Check-in
+// ==============================
+//        GLOBAL CHECK-IN
+// ==============================
 router.post('/check-in', authenticate, async (req, res) => {
   const { latitude, longitude, deviceId } = req.body;
 
-  if (!deviceId) {
-    return res.status(400).json({ message: "🚫 Device ID is required for security." });
+  if (!deviceId)
+    return res.status(400).json({ message: "Device ID required" });
+
+  const staff = await Staff.findById(req.staff);
+  if (!staff)
+    return res.status(404).json({ message: "Staff not found" });
+
+  const now = new Date();
+  const todayMidnight = new Date(now.setHours(0, 0, 0, 0));
+
+  // =========================================================
+  // 1️⃣ GET GLOBAL SCHEDULE
+  // =========================================================
+  const GlobalSchedule = require('../model/GlobalSchedule');
+  const globalSchedule = await GlobalSchedule.findOne();
+
+  if (!globalSchedule || globalSchedule.days.length === 0) {
+    return res.status(400).json({ message: "Admin has not set the office schedule." });
   }
 
-  const matchedOffice = allowedOffices.find(office =>
+  const todayName = new Date().toLocaleString("en-US", { weekday: "long" });
+  const isScheduledToday = globalSchedule.days.includes(todayName);
+
+  if (!isScheduledToday) {
+    return res.status(400).json({
+      message: `Today (${todayName}) is not a scheduled office day for all staff.`
+    });
+  }
+
+  // =========================================================
+  // 2️⃣ PREVENT MULTIPLE CHECK-IN
+  // =========================================================
+  const existingRecord = await Attendance.findOne({
+    staff: req.staff,
+    checkIn: { $gte: todayMidnight }
+  });
+
+  if (existingRecord) {
+    return res.json({ message: "You already checked in today" });
+  }
+
+  // =========================================================
+  // 3️⃣ LOCATION VALIDATION
+  // =========================================================
+  const matchedOffice = allowedOffices.find((office) =>
     isWithinRadius(latitude, longitude, office.lat, office.lng)
   );
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // =========================================================
+  // 4️⃣ DETERMINE STATUS
+  // =========================================================
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  let status = "Present";
 
-  const now = new Date();
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
+  const hasPermission =
+    staff.permission &&
+    new Date(staff.permission.startDate) <= now &&
+    now <= new Date(staff.permission.endDate);
 
-  const staff = await Staff.findById(req.staff);
-  if (!staff) {
-    return res.status(404).json({ message: "❌ Staff not found." });
-  }
-
-  // ✅ Check for active permission (leave, official duty, etc.)
-  const hasPermission = staff.permission &&
-                        staff.permission.startDate &&
-                        staff.permission.endDate &&
-                        new Date(staff.permission.startDate) <= now &&
-                        now <= new Date(staff.permission.endDate);
-
-  // ✅ Prevent multiple check-ins by same staff same day
-  const existingCheckIn = await Attendance.findOne({
-    staff: req.staff,
-    checkIn: { $gte: today }
-  });
-
-  if (existingCheckIn) {
-    return res.json({ message: "🚫 You have already checked in today." });
-  }
-
-  // ✅ Prevent same device being used by another staff same day
-  const existingDeviceCheckIn = await Attendance.findOne({
-    deviceId,
-    checkIn: { $gte: today }
-  });
-
-  if (existingDeviceCheckIn && existingDeviceCheckIn.staff.toString() !== req.staff.toString()) {
-    return res.status(400).json({ message: "🚫 This device has already been used to check in for another staff today." });
-  }
-
-  // ✅ Determine attendance status
-  let status = 'Present';
   if (hasPermission) {
-    status = 'Permission';
-  } else if (hours > 9 || (hours === 9 && minutes > 0)) {
-    status = 'Absent';
+    status = "Permission";
+  } else {
+    // Late (after 9AM but before 5PM)
+    if (hour >= 9 && (hour > 9 || minute > 0) && hour < 17) {
+      status = "Late";
+    }
+
+    // Anyone checking in at 5PM or later → Absent
+    if (hour >= 17) {
+      status = "Absent";
+    }
   }
 
-  // ✅ Save attendance record
+  // =========================================================
+  // 5️⃣ SAVE ATTENDANCE
+  // =========================================================
   const record = new Attendance({
     staff: req.staff,
-    officeName: matchedOffice ? matchedOffice.name : "Unknown Location",
-    latitude,
-    longitude,
-    locationStatus: matchedOffice ? "In Office" : "Not in Office",
     checkIn: now,
-    status,
-    deviceId
+    officeName: matchedOffice ? matchedOffice.name : "Unknown",
+    checkInLatitude: latitude,
+    checkInLongitude: longitude,
+    checkInLocationStatus: matchedOffice ? "In Office" : "Not in Office",
+    deviceId,
+    status
   });
 
   await record.save();
 
-  // ✅ Update staff's monthly absence count (only if Absent and not on Permission)
-  if (status === 'Absent') {
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const absenceCount = await Attendance.countDocuments({
-      staff: req.staff,
-      checkIn: { $gte: monthStart },
-      status: 'Absent'
-    });
-    staff.monthlyAbsence = absenceCount;
-    await staff.save();
-  }
-
+  // =========================================================
+  // 6️⃣ RESPONSE
+  // =========================================================
   res.json({
     message:
-      status === 'Absent'
-        ? "⏰ You checked in after 9:00 AM. Marked as Absent."
-        : status === 'Permission'
-        ? "📝 You are currently on Permission. Marked accordingly."
-        : "✅ Checked in successfully.",
+      status === "Late"
+        ? "⏰ Checked in after 9AM. Marked Late."
+        : status === "Absent"
+        ? "❌ Checked in after 5PM. Marked Absent."
+        : status === "Permission"
+        ? "📝 You are under official permission."
+        : "✅ Check-in successful.",
     status
   });
 });
-
 
 
 
@@ -238,6 +255,8 @@ router.get('/check-absences', authenticate, async (req, res) => {
 
 // ✅ Check-out
 router.post('/check-out', authenticate, async (req, res) => {
+  const { latitude, longitude } = req.body;
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -246,12 +265,20 @@ router.post('/check-out', authenticate, async (req, res) => {
     checkIn: { $gte: today }
   });
 
-  if (!record) return res.json({ message: "Not checked in today." });
+  if (!record) return res.json({ message: "You did not check in today" });
+
+  const matchedOffice = allowedOffices.find(office =>
+    isWithinRadius(latitude, longitude, office.lat, office.lng)
+  );
 
   record.checkOut = new Date();
+  record.checkOutLatitude = latitude;
+  record.checkOutLongitude = longitude;
+  record.checkOutLocationStatus = matchedOffice ? "In Office" : "Not in Office";
+
   await record.save();
 
-  res.json({ message: "Checked out successfully." });
+  res.json({ message: "Checked out successfully" });
 });
 
 
@@ -332,6 +359,57 @@ router.get('/presence-summary', authenticate, async (req, res) => {
   });
 });
 
+
+router.get('/auto-mark-absent', async (req, res) => {
+  const staffList = await Staff.find();
+
+  const now = new Date();
+  const today = new Date(now.setHours(0, 0, 0, 0));
+  const currentHour = new Date().getHours();
+
+  for (const staff of staffList) {
+    const schedule = await Schedule.findOne({ staff: staff._id });
+    if (!schedule) continue;
+
+    const todayName = new Date().toLocaleString('en-US', { weekday: 'long' });
+
+    // Only scheduled staff are required
+    if (!schedule.daysOfWeek.includes(todayName)) continue;
+
+    // Check if staff checked in today
+    const record = await Attendance.findOne({
+      staff: staff._id,
+      checkIn: { $gte: today }
+    });
+
+    // They didn't check in at all today
+    if (!record) {
+      // If it's already 5 pm or end of day → mark absent
+      if (currentHour >= 17) {
+        await Attendance.create({
+          staff: staff._id,
+          status: "Absent",
+          officeName: "No Check-In",
+          checkIn: new Date(),
+          checkInLocationStatus: "Absent",
+        });
+      }
+
+      continue;
+    }
+
+    // If they checked in but after 5 pm → convert record to Absent
+    const checkInTime = new Date(record.checkIn);
+    const checkInHour = checkInTime.getHours();
+
+    if (checkInHour >= 17) {
+      record.status = "Absent";
+      await record.save();
+    }
+  }
+
+  res.json({ message: "Auto absent check complete with 5PM rule." });
+});
 
 
 module.exports = router;

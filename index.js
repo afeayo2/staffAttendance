@@ -9,6 +9,8 @@ const attendanceRoutes = require('./route/attendance');
 const admin = require('./route/admin');
 const cron = require('node-cron');
 const Staff = require('./model/Staff');
+// === Load Cron Jobs ===
+require('./cron/index');
 
 //process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 

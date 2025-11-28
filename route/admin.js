@@ -10,6 +10,7 @@ const Admin = require('../model/Admin');
 const Schedule = require('../model/Schedule');
 const crypto = require('crypto');
 
+
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -238,7 +239,7 @@ router.get('/staff-list', auth, async (req, res) => {
   res.json(staff);
 });
 
-
+/*
 
 router.post('/create-schedule-all', auth, async (req, res) => {
   const { startDate, endDate, totalOfficeDaysPerWeek } = req.body;
@@ -412,7 +413,7 @@ router.post('/create-schedule-all', auth, async (req, res) => {
     schedulesCreated: schedulesToSave.length
   });
 });
-
+*/
 
 
 router.get('/staff-in-office/:date', auth, async (req, res) => {
@@ -617,6 +618,68 @@ router.get('/permissions', auth, async (req, res) => {
 
   res.json(permissions);
 });
+
+
+// ===============================
+//  ADMIN SETS GLOBAL OFFICE DAYS
+// ===============================
+router.post('/set-global-office-days',auth, async (req, res) => {
+  const { startDate, endDate, selectedDays } = req.body;
+
+  if (!startDate || !endDate || !selectedDays || selectedDays.length === 0) {
+    return res.status(400).json({
+      message: "Start date, end date and selected office days are required"
+    });
+  }
+
+  const dayMap = {
+    "Sunday": 0, "Monday": 1, "Tuesday": 2, "Wednesday": 3,
+    "Thursday": 4, "Friday": 5, "Saturday": 6
+  };
+
+  const selectedDayNumbers = selectedDays.map(day => dayMap[day]);
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  let assignedDates = [];
+  let current = new Date(start);
+
+  while (current <= end) {
+    if (selectedDayNumbers.includes(current.getDay())) {
+      assignedDates.push(new Date(current));
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  const allStaff = await Staff.find({ status: "Active" });
+
+  // Remove previous schedules in the period
+  await Schedule.deleteMany({
+    startDate: { $gte: start },
+    endDate: { $lte: end }
+  });
+
+  // Assign same schedule to every staff
+  const schedules = allStaff.map(staff => ({
+    staff: staff._id,
+    startDate: start,
+    endDate: end,
+    assignedDates,
+    officeDays: selectedDays
+  }));
+
+  await Schedule.insertMany(schedules);
+
+  res.json({
+    message: "Global office schedule successfully applied.",
+    selectedDays,
+    totalAssignedDates: assignedDates.length,
+    staffAssigned: allStaff.length
+  });
+});
+
+
 
 /*
 
