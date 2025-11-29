@@ -58,110 +58,105 @@ const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm = 0.05) => {
 
 // ✅ Check-in
 // ✅ Check-in
-router.post('/checkin', authMiddleware, async (req, res) => {
+router.post("/checkin", auth, async (req, res) => {
   try {
     const staffId = req.user.id;
     const { latitude, longitude, deviceId } = req.body;
 
     const staff = await Staff.findById(staffId);
-    if (!staff) {
-      return res.status(404).json({ message: "Staff not found" });
-    }
-
-    // Anti-multiple check-ins
-    if (staff.lastDeviceId && staff.lastDeviceId !== deviceId) {
-      return res.status(403).json({ message: "Check-in denied: Use your registered device." });
-    }
-
-    // Save device ID on first use
-    if (!staff.lastDeviceId) {
-      staff.lastDeviceId = deviceId;
-      await staff.save();
-    }
+    if (!staff) return res.status(404).json({ message: "Staff not found" });
 
     const now = new Date();
     const hour = now.getHours();
     const minute = now.getMinutes();
 
-    // Detect permission
-    const hasPermission =
-      staff.permission &&
-      new Date(staff.permission.startDate) <= now &&
-      now <= new Date(staff.permission.endDate);
+    // --- DEVICE SECURITY ---
+    if (staff.deviceId && staff.deviceId !== deviceId) {
+      return res.status(403).json({ message: "Check-in denied: Wrong device" });
+    }
 
-    // Determine if staff is inside office radius
-    const offices = await OfficeLocation.find(); // HO, Ajose, etc.
+    if (!staff.deviceId) {
+      staff.deviceId = deviceId;
+      await staff.save();
+    }
+
+    // --- FIND OFFICE ---
+    const offices = await OfficeLocation.find();
     let matchedOffice = null;
 
-    for (const office of offices) {
-      const distance = haversineDistance(
+    for (let office of offices) {
+      const dist = haversineDistance(
         { lat: latitude, lon: longitude },
         { lat: office.latitude, lon: office.longitude }
       );
 
-      if (distance <= office.radius) {
-        matchedOffice = office;
-        break;
-      }
+      if (dist <= office.radius) matchedOffice = office;
     }
 
     const isInOffice = matchedOffice ? true : false;
 
-    // ==========================
-    // FINAL STATUS LOGIC
-    // ==========================
-    let status = "Absent"; // default
+    // --- PERMISSION CHECK ---
+    const hasPermission =
+      staff.permission &&
+      now >= new Date(staff.permission.startDate) &&
+      now <= new Date(staff.permission.endDate);
+
+    // =====================================================================
+    //  FIXED STATUS LOGIC — UNKNOWN ALWAYS = ABSENT
+    // =====================================================================
+
+    let status = "Absent";
 
     if (hasPermission) {
       status = "Permission";
+
     } else if (!isInOffice) {
-      status = "Absent"; // location unknown or outside office
+      status = "Absent"; // UNKNOWN LOCATION ALWAYS ABSENT
+
     } else {
+      // INSIDE OFFICE
       if (hour >= 17) {
-        status = "Absent"; // after 5pm
-      } else if (hour >= 9 && (hour > 9 || minute > 0)) {
-        status = "Late"; // inside office but after 9am
+        status = "Absent"; // checking after 5pm
+      } else if (hour > 9 || (hour === 9 && minute > 0)) {
+        status = "Late";
       } else {
-        status = "Present"; // inside office before 9am
+        status = "Present";
       }
     }
 
-    // ==========================
-    // Save Check-In Record
-    // ==========================
+    // =====================================================================
+    //  SAVE ATTENDANCE — FIXED FIELD NAMES
+    // =====================================================================
+
     const attendance = new Attendance({
-      staffId,
-      date: now.toISOString().split("T")[0],
-      checkInTime: now,
-      checkInLocationStatus: matchedOffice ? "In Office" : "Unknown",
+      staff: staffId,
+      checkIn: now,
+      status: status,
       officeName: matchedOffice ? matchedOffice.name : "Unknown",
-      latitude,
-      longitude,
-      status
+      locationStatus: matchedOffice ? "In Office" : "Unknown",
+      deviceId,
     });
 
     await attendance.save();
 
-    // ==========================
-    // Monthly Absence Count
-    // ==========================
+    // ---- Absence Counter ----
     if (status === "Absent") {
       staff.monthlyAbsence = (staff.monthlyAbsence || 0) + 1;
       await staff.save();
     }
 
-    res.json({
-      message: `Check-in successful: You are marked as ${status}`,
+    return res.json({
+      message: `Check-in complete: ${status}`,
       office: matchedOffice ? matchedOffice.name : "Unknown",
+      inOffice: isInOffice,
       status
     });
 
-  } catch (error) {
-    console.error("Checkin error:", error);
-    res.status(500).json({ message: "Server error" });
+  } catch (err) {
+    console.log("Check-in error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
-
 
 
 
