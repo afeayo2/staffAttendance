@@ -9,6 +9,7 @@ const auth = require('../route/adminAuth'); // Separate admin middleware
 const Admin = require('../model/Admin');
 const Schedule = require('../model/Schedule');
 const crypto = require('crypto');
+const WeeklyOfficeSchedule = require('../model/WeeklyOfficeSchedule');
 
 
 const router = express.Router();
@@ -679,6 +680,38 @@ router.post('/set-global-office-days',auth, async (req, res) => {
   });
 });
 
+
+router.post('/set-weekly-office-days', async (req, res) => {
+  try {
+    const { weekStart, days } = req.body;
+
+    if (!weekStart || !days || days.length !== 3) {
+      return res.status(400).json({ message: "Select exactly 3 office days." });
+    }
+
+    // Overwrite existing weekly schedule
+    await WeeklyOfficeSchedule.deleteMany({});
+
+    const schedule = new WeeklyOfficeSchedule({
+      weekStart: new Date(weekStart),
+      days
+    });
+
+    await schedule.save();
+
+    res.json({ message: "Weekly office schedule saved successfully", schedule });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get('/view-weekly-schedule', async (req, res) => {
+  const schedule = await WeeklyOfficeSchedule.findOne({});
+  if (!schedule) {
+    return res.json({ message: "No weekly schedule found" });
+  }
+  res.json(schedule);
+});
 
 
 /*

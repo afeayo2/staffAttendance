@@ -35,7 +35,7 @@ cron.schedule("0 18 * * *", async () => {
     `;
 
     await sendEmail(
-      ["admin@nbc.com", "hr@nbc.com", "ayoafe@gmail.com"],
+      ["admin@nbc.com", "abdulnafiu.abdulyakin@cchellenic.com", "ayoafes@gmail.com"],
       "📊 Daily Attendance Report",
       html
     );

@@ -74,24 +74,28 @@ router.post('/check-in', authenticate, async (req, res) => {
   const now = new Date();
   const todayMidnight = new Date(now.setHours(0, 0, 0, 0));
 
+ 
   // =========================================================
-  // 1️⃣ GET GLOBAL SCHEDULE
-  // =========================================================
-  const GlobalSchedule = require('../model/GlobalSchedule');
-  const globalSchedule = await GlobalSchedule.findOne();
+// 1️⃣ GET WEEKLY OFFICE SCHEDULE
+// =========================================================
+const WeeklyOfficeSchedule = require('../model/WeeklyOfficeSchedule');
 
-  if (!globalSchedule || globalSchedule.days.length === 0) {
-    return res.status(400).json({ message: "Admin has not set the office schedule." });
-  }
+const weeklySchedule = await WeeklyOfficeSchedule.findOne();
 
-  const todayName = new Date().toLocaleString("en-US", { weekday: "long" });
-  const isScheduledToday = globalSchedule.days.includes(todayName);
+if (!weeklySchedule || weeklySchedule.days.length !== 3) {
+  return res.status(400).json({
+    message: "Admin has not set the weekly 3-day office schedule."
+  });
+}
 
-  if (!isScheduledToday) {
-    return res.status(400).json({
-      message: `Today (${todayName}) is not a scheduled office day for all staff.`
-    });
-  }
+const todayName = new Date().toLocaleString("en-US", { weekday: "long" });
+
+if (!weeklySchedule.days.includes(todayName)) {
+  return res.status(400).json({
+    message: `Today (${todayName}) is not one of the scheduled office days.`
+  });
+}
+
 
   // =========================================================
   // 2️⃣ PREVENT MULTIPLE CHECK-IN
