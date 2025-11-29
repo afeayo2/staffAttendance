@@ -58,7 +58,7 @@ const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm = 0.05) => {
 
 // ✅ Check-in
 // ✅ Check-in
-router.post("/checkin", auth, async (req, res) => {
+router.post("/check-in", auth, async (req, res) => {
   try {
     const staffId = req.user.id;
     const { latitude, longitude, deviceId } = req.body;
