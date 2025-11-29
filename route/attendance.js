@@ -58,122 +58,109 @@ const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm = 0.05) => {
 
 // ✅ Check-in
 // ✅ Check-in
-// ==============================
-//        GLOBAL CHECK-IN
-// ==============================
-router.post('/check-in', authenticate, async (req, res) => {
-  const { latitude, longitude, deviceId } = req.body;
+router.post('/checkin', authMiddleware, async (req, res) => {
+  try {
+    const staffId = req.user.id;
+    const { latitude, longitude, deviceId } = req.body;
 
-  if (!deviceId)
-    return res.status(400).json({ message: "Device ID required" });
-
-  const staff = await Staff.findById(req.staff);
-  if (!staff)
-    return res.status(404).json({ message: "Staff not found" });
-
-  const now = new Date();
-  const todayMidnight = new Date(now.setHours(0, 0, 0, 0));
-
- 
-  // =========================================================
-// 1️⃣ GET WEEKLY OFFICE SCHEDULE
-// =========================================================
-const WeeklyOfficeSchedule = require('../model/WeeklyOfficeSchedule');
-
-const weeklySchedule = await WeeklyOfficeSchedule.findOne();
-
-if (!weeklySchedule || weeklySchedule.days.length !== 3) {
-  return res.status(400).json({
-    message: "Admin has not set the weekly 3-day office schedule."
-  });
-}
-
-const todayName = new Date().toLocaleString("en-US", { weekday: "long" });
-
-if (!weeklySchedule.days.includes(todayName)) {
-  return res.status(400).json({
-    message: `Today (${todayName}) is not one of the scheduled office days.`
-  });
-}
-
-
-  // =========================================================
-  // 2️⃣ PREVENT MULTIPLE CHECK-IN
-  // =========================================================
-  const existingRecord = await Attendance.findOne({
-    staff: req.staff,
-    checkIn: { $gte: todayMidnight }
-  });
-
-  if (existingRecord) {
-    return res.json({ message: "You already checked in today" });
-  }
-
-  // =========================================================
-  // 3️⃣ LOCATION VALIDATION
-  // =========================================================
-  const matchedOffice = allowedOffices.find((office) =>
-    isWithinRadius(latitude, longitude, office.lat, office.lng)
-  );
-
-  // =========================================================
-  // 4️⃣ DETERMINE STATUS
-  // =========================================================
-  const hour = now.getHours();
-  const minute = now.getMinutes();
-  let status = "Present";
-
-  const hasPermission =
-    staff.permission &&
-    new Date(staff.permission.startDate) <= now &&
-    now <= new Date(staff.permission.endDate);
-
-  if (hasPermission) {
-    status = "Permission";
-  } else {
-    // Late (after 9AM but before 5PM)
-    if (hour >= 9 && (hour > 9 || minute > 0) && hour < 17) {
-      status = "Late";
+    const staff = await Staff.findById(staffId);
+    if (!staff) {
+      return res.status(404).json({ message: "Staff not found" });
     }
 
-    // Anyone checking in at 5PM or later → Absent
-    if (hour >= 17) {
-      status = "Absent";
+    // Anti-multiple check-ins
+    if (staff.lastDeviceId && staff.lastDeviceId !== deviceId) {
+      return res.status(403).json({ message: "Check-in denied: Use your registered device." });
     }
+
+    // Save device ID on first use
+    if (!staff.lastDeviceId) {
+      staff.lastDeviceId = deviceId;
+      await staff.save();
+    }
+
+    const now = new Date();
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+
+    // Detect permission
+    const hasPermission =
+      staff.permission &&
+      new Date(staff.permission.startDate) <= now &&
+      now <= new Date(staff.permission.endDate);
+
+    // Determine if staff is inside office radius
+    const offices = await OfficeLocation.find(); // HO, Ajose, etc.
+    let matchedOffice = null;
+
+    for (const office of offices) {
+      const distance = haversineDistance(
+        { lat: latitude, lon: longitude },
+        { lat: office.latitude, lon: office.longitude }
+      );
+
+      if (distance <= office.radius) {
+        matchedOffice = office;
+        break;
+      }
+    }
+
+    const isInOffice = matchedOffice ? true : false;
+
+    // ==========================
+    // FINAL STATUS LOGIC
+    // ==========================
+    let status = "Absent"; // default
+
+    if (hasPermission) {
+      status = "Permission";
+    } else if (!isInOffice) {
+      status = "Absent"; // location unknown or outside office
+    } else {
+      if (hour >= 17) {
+        status = "Absent"; // after 5pm
+      } else if (hour >= 9 && (hour > 9 || minute > 0)) {
+        status = "Late"; // inside office but after 9am
+      } else {
+        status = "Present"; // inside office before 9am
+      }
+    }
+
+    // ==========================
+    // Save Check-In Record
+    // ==========================
+    const attendance = new Attendance({
+      staffId,
+      date: now.toISOString().split("T")[0],
+      checkInTime: now,
+      checkInLocationStatus: matchedOffice ? "In Office" : "Unknown",
+      officeName: matchedOffice ? matchedOffice.name : "Unknown",
+      latitude,
+      longitude,
+      status
+    });
+
+    await attendance.save();
+
+    // ==========================
+    // Monthly Absence Count
+    // ==========================
+    if (status === "Absent") {
+      staff.monthlyAbsence = (staff.monthlyAbsence || 0) + 1;
+      await staff.save();
+    }
+
+    res.json({
+      message: `Check-in successful: You are marked as ${status}`,
+      office: matchedOffice ? matchedOffice.name : "Unknown",
+      status
+    });
+
+  } catch (error) {
+    console.error("Checkin error:", error);
+    res.status(500).json({ message: "Server error" });
   }
-
-  // =========================================================
-  // 5️⃣ SAVE ATTENDANCE
-  // =========================================================
-  const record = new Attendance({
-    staff: req.staff,
-    checkIn: now,
-    officeName: matchedOffice ? matchedOffice.name : "Unknown",
-    checkInLatitude: latitude,
-    checkInLongitude: longitude,
-    checkInLocationStatus: matchedOffice ? "In Office" : "Not in Office",
-    deviceId,
-    status
-  });
-
-  await record.save();
-
-  // =========================================================
-  // 6️⃣ RESPONSE
-  // =========================================================
-  res.json({
-    message:
-      status === "Late"
-        ? "⏰ Checked in after 9AM. Marked Late."
-        : status === "Absent"
-        ? "❌ Checked in after 5PM. Marked Absent."
-        : status === "Permission"
-        ? "📝 You are under official permission."
-        : "✅ Check-in successful.",
-    status
-  });
 });
-
 
 
 
