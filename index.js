@@ -15,8 +15,23 @@ require('./cron/index');
 //process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const app = express();
-app.use(cors());
+//const cors = require("cors");
+
+app.use(cors({
+    origin: "*",
+    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE"]
+}));
+
 app.use(express.json());
+
+
+
+app.use(cors({
+    origin: "*",
+    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE"]
+}));
 
 // MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI;
