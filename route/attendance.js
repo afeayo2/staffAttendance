@@ -58,9 +58,9 @@ const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm = 0.05) => {
 
 // ✅ Check-in
 // ✅ Check-in
-router.post("/check-in",authenticate, async (req, res) => {
+router.post("/check-in", authenticate, async (req, res) => {
   try {
-    const staffId = req.staff;   // ✅ FIXED
+    const staffId = req.staff;
     const { latitude, longitude, deviceId } = req.body;
 
     const staff = await Staff.findById(staffId);
@@ -70,15 +70,61 @@ router.post("/check-in",authenticate, async (req, res) => {
     const hour = now.getHours();
     const minute = now.getMinutes();
 
-    // Device lock
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayDate = new Date().toISOString().split("T")[0];
+
+    /* ---------------------------------------
+       1. BLOCK IF NOT ADMIN SCHEDULED
+    ----------------------------------------*/
+    const isScheduled = staff.assignedDates?.includes(todayDate);
+
+    if (!isScheduled) {
+      return res.status(403).json({
+        message: "❌ You are NOT scheduled for today by admin"
+      });
+    }
+
+    /* ---------------------------------------
+       2. BLOCK MULTIPLE CHECK-INS PER DAY
+    ----------------------------------------*/
+    const alreadyChecked = await Attendance.findOne({
+      staff: staffId,
+      checkIn: { $gte: today }
+    });
+
+    if (alreadyChecked) {
+      return res.status(403).json({
+        message: "❌ You have already checked in today"
+      });
+    }
+
+    /* ---------------------------------------
+       3. DEVICE IS FOR ONLY ONE STAFF
+    ----------------------------------------*/
+    const deviceUsed = await Staff.findOne({
+      deviceId,
+      _id: { $ne: staffId }
+    });
+
+    if (deviceUsed) {
+      return res.status(403).json({
+        message: "❌ This device is already registered to another staff"
+      });
+    }
+
+    /* ---------------------------------------
+       4. ORIGINAL DEVICE LOCK
+    ----------------------------------------*/
     if (staff.deviceId && staff.deviceId !== deviceId) {
-      return res.status(403).json({ message: "Check-in denied: Wrong device" });
+      return res.status(403).json({ message: "❌ Wrong device detected" });
     }
 
     if (!staff.deviceId) {
       staff.deviceId = deviceId;
       await staff.save();
     }
+
 
     // Office match
     const matchedOffice = allowedOffices.find(office =>
