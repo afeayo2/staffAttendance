@@ -58,9 +58,9 @@ const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm = 0.05) => {
 
 // ✅ Check-in
 // ✅ Check-in
-router.post("/check-in", auth, async (req, res) => {
+router.post("/check-in",authenticate, async (req, res) => {
   try {
-    const staffId = req.user.id;
+    const staffId = req.staff;   // ✅ FIXED
     const { latitude, longitude, deviceId } = req.body;
 
     const staff = await Staff.findById(staffId);
@@ -70,7 +70,7 @@ router.post("/check-in", auth, async (req, res) => {
     const hour = now.getHours();
     const minute = now.getMinutes();
 
-    // --- DEVICE SECURITY ---
+    // Device lock
     if (staff.deviceId && staff.deviceId !== deviceId) {
       return res.status(403).json({ message: "Check-in denied: Wrong device" });
     }
@@ -80,58 +80,34 @@ router.post("/check-in", auth, async (req, res) => {
       await staff.save();
     }
 
-    // --- FIND OFFICE ---
-    const offices = await OfficeLocation.find();
-    let matchedOffice = null;
+    // Office match
+    const matchedOffice = allowedOffices.find(office =>
+      isWithinRadius(latitude, longitude, office.lat, office.lng)
+    );
 
-    for (let office of offices) {
-      const dist = haversineDistance(
-        { lat: latitude, lon: longitude },
-        { lat: office.latitude, lon: office.longitude }
-      );
+    const isInOffice = !!matchedOffice;
 
-      if (dist <= office.radius) matchedOffice = office;
-    }
-
-    const isInOffice = matchedOffice ? true : false;
-
-    // --- PERMISSION CHECK ---
     const hasPermission =
       staff.permission &&
       now >= new Date(staff.permission.startDate) &&
       now <= new Date(staff.permission.endDate);
 
-    // =====================================================================
-    //  FIXED STATUS LOGIC — UNKNOWN ALWAYS = ABSENT
-    // =====================================================================
-
     let status = "Absent";
 
     if (hasPermission) {
       status = "Permission";
-
     } else if (!isInOffice) {
-      status = "Absent"; // UNKNOWN LOCATION ALWAYS ABSENT
-
+      status = "Absent";
     } else {
-      // INSIDE OFFICE
-      if (hour >= 17) {
-        status = "Absent"; // checking after 5pm
-      } else if (hour > 9 || (hour === 9 && minute > 0)) {
-        status = "Late";
-      } else {
-        status = "Present";
-      }
+      if (hour >= 17) status = "Absent";
+      else if (hour > 9 || (hour === 9 && minute > 0)) status = "Late";
+      else status = "Present";
     }
-
-    // =====================================================================
-    //  SAVE ATTENDANCE — FIXED FIELD NAMES
-    // =====================================================================
 
     const attendance = new Attendance({
       staff: staffId,
       checkIn: now,
-      status: status,
+      status,
       officeName: matchedOffice ? matchedOffice.name : "Unknown",
       locationStatus: matchedOffice ? "In Office" : "Unknown",
       deviceId,
@@ -139,24 +115,24 @@ router.post("/check-in", auth, async (req, res) => {
 
     await attendance.save();
 
-    // ---- Absence Counter ----
     if (status === "Absent") {
       staff.monthlyAbsence = (staff.monthlyAbsence || 0) + 1;
       await staff.save();
     }
 
     return res.json({
-      message: `Check-in complete: ${status}`,
+      message: `✅ Check-in complete: ${status}`,
       office: matchedOffice ? matchedOffice.name : "Unknown",
       inOffice: isInOffice,
       status
     });
 
   } catch (err) {
-    console.log("Check-in error:", err);
+    console.log("❌ Check-in error:", err.message);
     return res.status(500).json({ message: "Server error" });
   }
 });
+
 
 
 

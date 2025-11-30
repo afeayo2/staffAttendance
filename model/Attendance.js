@@ -8,7 +8,12 @@ const attendanceSchema = new mongoose.Schema({
   deviceId: String,
   checkIn: Date,
   checkOut: Date,
-  status: { type: String, enum: ['Present', 'Absent'], default: 'Present' },
+  status: {
+  type: String,
+  enum: ["Present", "Late", "Absent"],
+  default: "Absent"
+}
+,
   locationStatus: { type: String, enum: ["In Office", "Not in Office"], default: "In Office" },
   notes: { type: String, default: '' }
 }, { timestamps: true });
