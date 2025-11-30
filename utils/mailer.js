@@ -40,13 +40,16 @@ const nodemailer = require("nodemailer");
 
 // Configure SMTP transporter
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,     // e.g., smtp.us.appsuite.cloud
-  port: parseInt(process.env.SMTP_PORT) || 465, // SSL port
-  secure: true,                     // true for 465, false for 587
+  host: process.env.SMTP_HOST,
+  port: 587,          // change from 465
+  secure: false,      // false for STARTTLS
   auth: {
-    user: process.env.SMTP_USER,   // your SMTP email
-    pass: process.env.SMTP_PASS,   // your SMTP password
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
   },
+  tls: {
+    rejectUnauthorized: false
+  }
 });
 
 // Function to send email
