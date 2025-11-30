@@ -14,7 +14,11 @@ const attendanceSchema = new mongoose.Schema({
   default: "Absent"
 }
 ,
-  locationStatus: { type: String, enum: ["In Office", "Not in Office"], default: "In Office" },
+  locationStatus: { 
+    type: String, 
+    enum: ["In Office", "Not in Office", "Unknown"], 
+    default: "Unknown" 
+  },
   notes: { type: String, default: '' }
 }, { timestamps: true });
 
