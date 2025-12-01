@@ -29,7 +29,7 @@ router.post('/login', async (req, res) => {
 
   res.json({ token, admin: { id: admin._id, name: admin.name, email: admin.email } });
 });
-
+/*
 //  Add Staff
 router.post('/add-staff', auth, async (req, res) => {
   const { name, email } = req.body;
@@ -95,7 +95,7 @@ const html = `
 
   res.json({ message: 'Staff created and email sent' });
 });
-
+*/
 //  Dashboard Analytics
 router.get('/dashboard', auth, async (req, res) => {
   const totalStaff = await Staff.countDocuments();
@@ -318,7 +318,7 @@ router.get('/grouped-schedules-by-date', auth, async (req, res) => {
 
 
 
-
+/*
 router.post('/add-admin', auth, async (req, res) => {
   const { name, email } = req.body;
 
@@ -376,7 +376,7 @@ router.post('/add-admin', auth, async (req, res) => {
   res.json({ message: '✅ Admin created and login details sent via email.' });
 });
 
-
+*/
 
 
 router.post('/forgot-password', async (req, res) => {
@@ -536,6 +536,147 @@ router.get('/view-weekly-schedule', async (req, res) => {
   }
   res.json(schedule);
 });
+
+
+
+// ✅ Add Staff (Admin sets password - No email)
+router.post('/add-staff', auth, async (req, res) => {
+  const { name, email, password } = req.body;
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: "Name, Email and Password are required" });
+  }
+
+  const existing = await Staff.findOne({ email });
+  if (existing) {
+    return res.status(400).json({ message: "Staff already exists" });
+  }
+
+  const hashed = await bcrypt.hash(password, 10);
+
+  const staff = new Staff({
+    name,
+    email,
+    password: hashed,
+    status: "Active"
+  });
+
+  await staff.save();
+
+  res.json({
+    message: "✅ Staff created successfully (No email sent)",
+    staff: { id: staff._id, name: staff.name, email: staff.email }
+  });
+});
+
+
+// ✅ Add Admin (Admin sets password - No email)
+router.post('/add-admin', auth, async (req, res) => {
+  const { name, email, password } = req.body;
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: "Name, Email and Password are required" });
+  }
+
+  const existingAdmin = await Admin.findOne({ email });
+  if (existingAdmin) {
+    return res.status(400).json({ message: "Admin with this email already exists" });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  const newAdmin = new Admin({
+    name,
+    email,
+    password: hashedPassword
+  });
+
+  await newAdmin.save();
+
+  res.json({
+    message: "✅ Admin created successfully (No email sent)",
+    admin: { id: newAdmin._id, name: newAdmin.name, email: newAdmin.email }
+  });
+});
+
+
+// View all staff (Admin)
+router.get('/admin/staff', auth, async (req, res) => {
+  try {
+    // Optional: ensure admin only
+    const admin = await Staff.findById(req.staff);
+    if (!admin || admin.role !== "Admin") {
+      return res.status(403).json({ message: "Unauthorized access" });
+    }
+
+    const staff = await Staff.find()
+      .select("-password -__v")
+      .sort({ createdAt: -1 });
+
+    res.json({
+      total: staff.length,
+      staff
+    });
+
+  } catch (err) {
+    console.error("❌ Error fetching staff:", err.message);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// Delete a staff (Admin)
+router.delete('/admin/staff/:id', auth, async (req, res) => {
+  try {
+    // Ensure admin only
+    const admin = await Staff.findById(req.staff);
+    if (!admin || admin.role !== "Admin") {
+      return res.status(403).json({ message: "Unauthorized access" });
+    }
+
+    const staffId = req.params.id;
+
+    const staff = await Staff.findById(staffId);
+    if (!staff) {
+      return res.status(404).json({ message: "Staff not found" });
+    }
+
+    await Staff.findByIdAndDelete(staffId);
+
+    // Optional: remove related attendance
+    await Attendance.deleteMany({ staff: staffId });
+
+    res.json({
+      message: "✅ Staff deleted successfully"
+    });
+
+  } catch (err) {
+    console.error("❌ Delete error:", err.message);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+router.get('/admin/staff/search',auth, async (req, res) => {
+  try {
+    const admin = await Staff.findById(req.staff);
+    if (!admin || admin.role !== "Admin") {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    const { name } = req.query;
+
+    const staff = await Staff.find({
+      fullName: { $regex: name, $options: "i" }
+    }).select("-password");
+
+    res.json({ staff });
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 
 /*

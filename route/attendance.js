@@ -5,8 +5,10 @@ const jwt = require('jsonwebtoken');
 const authenticate = require('./authenticate');
 const crypto = require('crypto');
 const router = express.Router();
-const Schedule = require('../model/Schedule');  
+//const Schedule = require('../model/Schedule');  
 const JWT_SECRET = process.env.JWT_SECRET 
+const WeeklyOfficeSchedule = require('../model/WeeklyOfficeSchedule');
+
 
 async function clearExpiredPermission(staff) {
   if (staff.permission && staff.permission.endDate) {
@@ -63,59 +65,51 @@ router.post("/check-in", authenticate, async (req, res) => {
     const staffId = req.staff;
     const { latitude, longitude, deviceId } = req.body;
 
+    if (!latitude || !longitude || !deviceId) {
+      return res.status(400).json({ message: "All fields required" });
+    }
+
     const staff = await Staff.findById(staffId);
     if (!staff) return res.status(404).json({ message: "Staff not found" });
 
     const now = new Date();
-    const hour = now.getHours();
-    const minute = now.getMinutes();
+    const todayName = now.toLocaleDateString("en-US", { weekday: "long" });
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayDate = new Date().toISOString().split("T")[0];
+    // ✅ GLOBAL schedule for everyone
+    const schedule = await WeeklyOfficeSchedule.findOne().sort({ createdAt: -1 });
 
-    /* ---------------------------------------
-       1. BLOCK IF NOT ADMIN SCHEDULED
-    ----------------------------------------*/
-    const isScheduled = staff.assignedDates?.includes(todayDate);
-
-    if (!isScheduled) {
+    if (!schedule || !schedule.days.includes(todayName)) {
       return res.status(403).json({
-        message: "❌ You are NOT scheduled for today by admin"
+        message: `❌ You are NOT scheduled for today (${todayName})`,
+        yourSchedule: schedule ? schedule.days : []
       });
     }
 
-    /* ---------------------------------------
-       2. BLOCK MULTIPLE CHECK-INS PER DAY
-    ----------------------------------------*/
+    // ✅ Prevent multiple check-ins per day
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
     const alreadyChecked = await Attendance.findOne({
       staff: staffId,
-      checkIn: { $gte: today }
+      checkIn: { $gte: startOfDay }
     });
 
     if (alreadyChecked) {
-      return res.status(403).json({
-        message: "❌ You have already checked in today"
-      });
+      return res.status(403).json({ message: "❌ Already checked in today" });
     }
 
-    /* ---------------------------------------
-       3. DEVICE IS FOR ONLY ONE STAFF
-    ----------------------------------------*/
-    const deviceUsed = await Staff.findOne({
+    // ✅ Device Anti-Fraud
+    const otherStaffDevice = await Staff.findOne({
       deviceId,
       _id: { $ne: staffId }
     });
 
-    if (deviceUsed) {
+    if (otherStaffDevice) {
       return res.status(403).json({
-        message: "❌ This device is already registered to another staff"
+        message: "❌ This device belongs to another staff"
       });
     }
 
-    /* ---------------------------------------
-       4. ORIGINAL DEVICE LOCK
-    ----------------------------------------*/
     if (staff.deviceId && staff.deviceId !== deviceId) {
       return res.status(403).json({ message: "❌ Wrong device detected" });
     }
@@ -125,26 +119,27 @@ router.post("/check-in", authenticate, async (req, res) => {
       await staff.save();
     }
 
-
-    // Office match
+    // ✅ Office match
     const matchedOffice = allowedOffices.find(office =>
       isWithinRadius(latitude, longitude, office.lat, office.lng)
     );
 
     const isInOffice = !!matchedOffice;
 
+    // ✅ Permission check
     const hasPermission =
       staff.permission &&
       now >= new Date(staff.permission.startDate) &&
       now <= new Date(staff.permission.endDate);
 
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+
     let status = "Absent";
 
-    if (hasPermission) {
-      status = "Permission";
-    } else if (!isInOffice) {
-      status = "Absent";
-    } else {
+    if (hasPermission) status = "Permission";
+    else if (!isInOffice) status = "Absent";
+    else {
       if (hour >= 17) status = "Absent";
       else if (hour > 9 || (hour === 9 && minute > 0)) status = "Late";
       else status = "Present";
@@ -154,9 +149,9 @@ router.post("/check-in", authenticate, async (req, res) => {
       staff: staffId,
       checkIn: now,
       status,
-      officeName: matchedOffice ? matchedOffice.name : "Unknown",
-      locationStatus: matchedOffice ? "In Office" : "Unknown",
       deviceId,
+      officeName: matchedOffice ? matchedOffice.name : "Out of Office",
+      locationStatus: matchedOffice ? "In Office" : "Not in Office"
     });
 
     await attendance.save();
@@ -167,18 +162,16 @@ router.post("/check-in", authenticate, async (req, res) => {
     }
 
     return res.json({
-      message: `✅ Check-in complete: ${status}`,
-      office: matchedOffice ? matchedOffice.name : "Unknown",
-      inOffice: isInOffice,
-      status
+      message: `✅ Check-in Successful: ${status}`,
+      office: matchedOffice ? matchedOffice.name : "Out of Office",
+      locationStatus: matchedOffice ? "In Office" : "Not in Office"
     });
 
   } catch (err) {
-    console.log("❌ Check-in error:", err.message);
-    return res.status(500).json({ message: "Server error" });
+    console.error("❌ Check-in error:", err.message);
+    res.status(500).json({ message: "Server error" });
   }
 });
-
 
 
 
