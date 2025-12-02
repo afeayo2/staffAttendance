@@ -213,26 +213,102 @@ router.get('/staff/:id/attendance', auth, async (req, res) => {
   res.json(records);
 });
 
-router.get('/present-today', auth, async (req, res) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
-  const attendanceRecords = await Attendance.find({
-    checkIn: { $gte: today }
-  }).populate('staff', 'name email');
+router.get('/present', auth, async (req, res) => {
+  try {
+    let { mode = 'day', date, month, year, page = 1, limit = 15 } = req.query;
 
-  const result = attendanceRecords.map(record => ({
-    staffId: record.staff._id,
-    name: record.staff.name,
-    email: record.staff.email,
+    page = parseInt(page);
+    limit = parseInt(limit);
+
+    let start = new Date();
+    let end = new Date();
+
+    // ✅ DAY
+    if (mode === 'day') {
+      const selectedDate = date ? new Date(date) : new Date();
+
+      start = new Date(selectedDate);
+      start.setHours(0, 0, 0, 0);
+
+      end = new Date(selectedDate);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    // ✅ WEEK
+    else if (mode === 'week') {
+      const today = new Date();
+      const day = today.getDay(); // 0-6
+      const diffToMonday = today.getDate() - day + (day === 0 ? -6 : 1);
+
+      start = new Date(today.setDate(diffToMonday));
+      start.setHours(0, 0, 0, 0);
+
+      end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    // ✅ MONTH
+    else if (mode === 'month') {
+      const y = year ? parseInt(year) : new Date().getFullYear();
+      const m = month ? parseInt(month) - 1 : new Date().getMonth();
+
+      start = new Date(y, m, 1);
+      end = new Date(y, m + 1, 0, 23, 59, 59, 999);
+    }
+
+    const skip = (page - 1) * limit;
+
+    const filter = {
+      checkIn: { $gte: start, $lte: end },
+      locationStatus: "In Office"
+    };
+
+    const [attendanceRecords, total] = await Promise.all([
+      Attendance.find(filter)
+        .skip(skip)
+        .limit(limit)
+        .populate('staff', 'name email'),
+      Attendance.countDocuments(filter)
+    ]);
+
+    const presentCount = await Attendance.countDocuments({
+  checkIn: { $gte: start, $lte: end },
+  locationStatus: "In Office"
+});
+
+const absentCount = await Attendance.countDocuments({
+  createdAt: { $gte: start, $lte: end },
+  locationStatus: "Absent"
+});
+
+  
+
+    res.json({
+  page: Number(page),
+  totalPages: Math.ceil(total / limit),
+  totalRecords: total,
+  presentCount,
+  absentCount,
+  records: attendanceRecords.map(record => ({
+    name: record.staff?.name,
+    email: record.staff?.email,
     office: record.officeName,
     checkInTime: record.checkIn,
     latitude: record.latitude,
     longitude: record.longitude
-  }));
-
-  res.json(result);
+  }))
 });
+
+
+  } catch (error) {
+    console.error('❌ Filter error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
 
 // Get all staff list for dropdown
 router.get('/staff-list', auth, async (req, res) => {
@@ -270,7 +346,7 @@ router.get('/staff-in-office/:date', auth, async (req, res) => {
   });
 });
 
-
+/*
 router.get('/view-schedules-detailed', auth, async (req, res) => {
   const schedules = await Schedule.find()
     .populate('staff', 'name email')
@@ -318,7 +394,7 @@ router.get('/grouped-schedules-by-date', auth, async (req, res) => {
 
 
 
-/*
+
 router.post('/add-admin', auth, async (req, res) => {
   const { name, email } = req.body;
 
