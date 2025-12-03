@@ -12,6 +12,8 @@ const crypto = require('crypto');
 const WeeklyOfficeSchedule = require('../model/WeeklyOfficeSchedule');
 
 
+
+
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -677,39 +679,23 @@ router.post('/add-admin', auth, async (req, res) => {
 
 
 // View all staff (Admin)
-router.get('/admin/staff', auth, async (req, res) => {
+// ✅ GET ALL STAFF (ADMIN)
+router.get('/staff', auth,async (req, res) => {
   try {
-    // Optional: ensure admin only
-    const admin = await Staff.findById(req.staff);
-    if (!admin || admin.role !== "Admin") {
-      return res.status(403).json({ message: "Unauthorized access" });
-    }
+    const staff = await Staff.find().select('-password'); // hide passwords
 
-    const staff = await Staff.find()
-      .select("-password -__v")
-      .sort({ createdAt: -1 });
+    res.json(staff);
 
-    res.json({
-      total: staff.length,
-      staff
-    });
-
-  } catch (err) {
-    console.error("❌ Error fetching staff:", err.message);
-    res.status(500).json({ message: "Server error" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to fetch staff" });
   }
 });
 
 
-// Delete a staff (Admin)
-router.delete('/admin/staff/:id', auth, async (req, res) => {
+// ✅ DELETE STAFF BY ID (ADMIN)
+router.delete('/staff/:id', auth,async (req, res) => {
   try {
-    // Ensure admin only
-    const admin = await Staff.findById(req.staff);
-    if (!admin || admin.role !== "Admin") {
-      return res.status(403).json({ message: "Unauthorized access" });
-    }
-
     const staffId = req.params.id;
 
     const staff = await Staff.findById(staffId);
@@ -719,40 +705,45 @@ router.delete('/admin/staff/:id', auth, async (req, res) => {
 
     await Staff.findByIdAndDelete(staffId);
 
-    // Optional: remove related attendance
-    await Attendance.deleteMany({ staff: staffId });
+    res.json({ message: "✅ Staff deleted successfully" });
 
-    res.json({
-      message: "✅ Staff deleted successfully"
-    });
-
-  } catch (err) {
-    console.error("❌ Delete error:", err.message);
-    res.status(500).json({ message: "Server error" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to delete staff" });
   }
 });
 
 
-router.get('/admin/staff/search',auth, async (req, res) => {
+// ✅ UPDATE STAFF (ADMIN)
+router.put('/staff/:id',auth, async (req, res) => {
   try {
-    const admin = await Staff.findById(req.staff);
-    if (!admin || admin.role !== "Admin") {
-      return res.status(403).json({ message: "Unauthorized" });
+    const { email, password } = req.body;
+    const staffId = req.params.id;
+
+    const staff = await Staff.findById(staffId);
+    if (!staff) {
+      return res.status(404).json({ message: "Staff not found" });
     }
 
-    const { name } = req.query;
+    if (email) {
+      staff.email = email;
+    }
 
-    const staff = await Staff.find({
-      fullName: { $regex: name, $options: "i" }
-    }).select("-password");
+    if (password && password.trim() !== "") {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+      staff.password = hashedPassword;
+    }
 
-    res.json({ staff });
+    await staff.save();
 
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    res.json({ message: "✅ Staff updated successfully" });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to update staff" });
   }
 });
-
 
 
 /*

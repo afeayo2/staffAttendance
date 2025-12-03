@@ -132,18 +132,40 @@ router.post("/check-in", authenticate, async (req, res) => {
       now >= new Date(staff.permission.startDate) &&
       now <= new Date(staff.permission.endDate);
 
-    const hour = now.getHours();
-    const minute = now.getMinutes();
+// Nigeria time safety
+const nigeriaTime = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Lagos" }));
+const hour = nigeriaTime.getHours();
+const minute = nigeriaTime.getMinutes();
 
-    let status = "Absent";
+let status = "Absent";
 
-    if (hasPermission) status = "Permission";
-    else if (!isInOffice) status = "Absent";
-    else {
-      if (hour >= 17) status = "Absent";
-      else if (hour > 9 || (hour === 9 && minute > 0)) status = "Late";
-      else status = "Present";
-    }
+if (hasPermission) {
+  status = "Permission";
+} 
+else if (!isInOffice) {
+  status = "Absent";
+} 
+else {
+
+  // After 5pm — Absent
+  if (hour >= 17) {
+    status = "Absent";
+  } 
+  
+  // 9:01am to 4:59pm — Late
+  else if ((hour === 9 && minute >= 1) || (hour > 9 && hour < 17)) {
+    status = "Late";
+  } 
+  
+  // Before or at 9:00am — Present
+  else {
+    status = "Present";
+  }
+}
+
+console.log("Check-in Time:", nigeriaTime.toLocaleTimeString());
+console.log("Status Assigned:", status);
+
 
     const attendance = new Attendance({
       staff: staffId,
@@ -369,7 +391,7 @@ router.get('/auto-mark-absent', async (req, res) => {
   const currentHour = new Date().getHours();
 
   for (const staff of staffList) {
-    const schedule = await Schedule.findOne({ staff: staff._id });
+   const schedule = await WeeklyOfficeSchedule.findOne();
     if (!schedule) continue;
 
     const todayName = new Date().toLocaleString('en-US', { weekday: 'long' });
