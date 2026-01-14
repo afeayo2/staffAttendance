@@ -14,6 +14,27 @@ const attendanceSchema = new mongoose.Schema({
   default: "Absent"
 }
 ,
+adminOverride: {
+  type: Boolean,
+  default: false,
+},
+
+overrideBy: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Admin",
+  default: null,
+},
+
+overrideReason: {
+  type: String,
+  default: "",
+},
+
+overrideAt: {
+  type: Date,
+  default: null,
+},
+
   locationStatus: { 
     type: String, 
     enum: ["In Office", "Not in Office", "Unknown"], 

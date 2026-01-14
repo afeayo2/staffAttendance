@@ -746,6 +746,33 @@ router.put('/staff/:id',auth, async (req, res) => {
 });
 
 
+router.put("/override/:attendanceId", adminAuth, async (req, res) => {
+  try {
+    const { status, reason } = req.body; // PRESENT or LATE
+    const { attendanceId } = req.params;
+
+    const attendance = await Attendance.findById(attendanceId);
+
+    if (!attendance) {
+      return res.status(404).json({ message: "Attendance not found" });
+    }
+
+    attendance.status = status; // PRESENT or LATE
+    attendance.adminOverride = true;
+    attendance.overrideBy = req.admin._id;
+    attendance.overrideReason = reason;
+    attendance.overrideAt = new Date();
+
+    await attendance.save();
+
+    res.json({ message: "✅ Attendance overridden successfully" });
+
+  } catch (error) {
+    res.status(500).json({ message: "Override failed", error });
+  }
+});
+
+
 /*
 
 // One-time Admin Registration
